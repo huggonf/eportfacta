@@ -176,6 +176,11 @@ BANCOS_BLOQUEADOS = [
         "nomes":   ["NBC BANK", "NBC"],
         "motivo":  "NBC Bank não é portável pela FACTA.",
     },
+    {
+        "codigos": ["935"],
+        "nomes":   ["FACTA"],
+        "motivo":  "Facta não é portável pela FACTA.",
+    },
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
