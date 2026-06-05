@@ -266,4 +266,4 @@ TROCO_MINIMO = 50.00
 #   SD = PMT × [1 - (1 + i)^(-n_restantes)] / i
 # ══════════════════════════════════════════════════════════════════════════════
 
-DESCONTO_SD_SEM_TAXA = 0.15   # 15% de desconto sobre PMT × n_restantes
+DESCONTO_SD_SEM_TAXA = 0.30   # 30% de desconto sobre PMT × n_restantes
