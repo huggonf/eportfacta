@@ -167,74 +167,65 @@ def extrair_emprestimos_ativos(paginas, tabelas_por_pag):
 
 def extrair_cartoes_ativos(paginas, tabelas_por_pag=None):
     """
-    Extrai cartões RMC e RCC ativos E suspensos.
-    Suspensos (Banco ou INSS) ainda comprometem a margem e devem ser incluídos.
-    Usa extract_tables() para leitura estruturada — mais robusto que texto puro,
-    pois o pdfplumber fragmenta as colunas em várias linhas no modo texto.
+    Extrai cartoes RMC e RCC ativos E suspensos.
+    Usa extract_tables() — robusto para formatos com ou sem espacos no cabecalho.
+    Situacoes que comprometem a margem: Ativo, Suspenso (Banco ou INSS).
     """
-    # Situações que comprometem a margem consignável
-    SITUACOES_COMPROME = {"ativo", "suspenso", "suspenso banco", "suspenso inss"}
-
+    SITUACOES = {"ativo", "suspenso", "suspenso banco", "suspenso inss"}
     rmc, rcc = [], []
 
-    # Identificar páginas que contenham seção de cartão
     paginas_cartao = [i for i, pg in enumerate(paginas) if "CARTÃO DE CRÉDITO" in pg]
 
     for idx_pg in paginas_cartao:
         if tabelas_por_pag is None or idx_pg >= len(tabelas_por_pag):
             continue
         for tabela in tabelas_por_pag[idx_pg]:
-            if not tabela: continue
-            # Determinar modalidade: procurar cabeçalho "CARTÃO DE CRÉDITO - RMC/RCC"
-            modalidade = None
-            for row in tabela:
-                celula = " ".join(str(c or "") for c in row).upper()
-                if "CARTÃO DE CRÉDITO - RMC" in celula:
-                    modalidade = "RMC"; break
-                if "CARTÃO DE CRÉDITO - RCC" in celula:
-                    modalidade = "RCC"; break
+            if not tabela or not tabela[0]: continue
 
-            if not modalidade: continue
+            # Detectar modalidade pelo cabecalho (aceita com e sem espacos)
+            cab = str(tabela[0][0] or "").upper().replace(" ", "")
 
-            for row in tabela:
+            # Ignorar tabelas de excluidos/encerrados
+            conteudo = str(tabela).upper()
+            if "EXCLUÍDO" in conteudo[:200] or "ENCERRADO" in conteudo[:200]:
+                continue
+
+            if "RMC" in cab and "RCC" not in cab:
+                modalidade = "RMC"
+            elif "RCC" in cab and "RMC" not in cab:
+                modalidade = "RCC"
+            else:
+                continue
+
+            for row in tabela[1:]:
                 if not row or len(row) < 4: continue
-                # Colunas: 0=CONTRATO, 1=TIPO, 2=BANCO, 3=SITUAÇÃO, 4=ORIGEM, 5=DATA, 6=LIMITE, 7=RESERVADO
+
+                sit = str(row[3] or "").lower().strip()
+                # Ignorar cabecalhos e linhas sem situacao valida
+                if not any(s in sit for s in SITUACOES):
+                    continue
+
                 contrato_raw = limpar(row[0])
-                banco_raw    = limpar(row[2]) if len(row) > 2 else ""
-                situacao_raw = limpar(row[3]).lower() if len(row) > 3 else ""
-
-                # Ignorar linhas de cabeçalho e de desconto
-                if not contrato_raw or contrato_raw.upper() in ("CONTRATO", "CARTÃO DE CRÉDITO - RMC", "CARTÃO DE CRÉDITO - RCC"):
-                    continue
-                if "desconto" in limpar(row[1] or "").lower():
-                    continue
-                # Só contratos que comprometem a margem
-                if not any(s in situacao_raw for s in SITUACOES_COMPROME):
-                    continue
-                # Precisa ter valores monetários
-                linha_str = " ".join(str(c or "") for c in row)
-                if not re.search(r"R\$[\d.,]+", linha_str):
+                if not contrato_raw or contrato_raw.upper() in ("CONTRATO",):
                     continue
 
-                # Determinar situação legível
-                if "suspenso" in situacao_raw:
-                    situacao = "Suspenso"
-                else:
-                    situacao = "Ativo"
+                # Situacao legivel
+                situacao = "Suspenso" if "suspenso" in sit else "Ativo"
 
                 c = {
                     "modalidade": modalidade,
                     "situacao":   situacao,
                     "contrato":   contrato_raw,
-                    "banco":      banco_raw,
+                    "banco":      limpar(row[2]) if len(row) > 2 else "",
                 }
 
-                # Data de inclusão
+                # Data de inclusao (coluna 5)
                 data_raw = limpar(row[5]) if len(row) > 5 else ""
                 if re.match(r"\d{2}/\d{2}/\d{2}", data_raw):
                     c["data_inclusao"] = data_raw
 
-                # Limite e reservado
+                # Limite e reservado (colunas 6 e 7)
+                linha_str = " ".join(str(x or "") for x in row)
                 vals = re.findall(r"R\$[\d.,]+", linha_str)
                 if vals:           c["limite_cartao"]        = vals[0]
                 if len(vals) >= 2: c["reservado_atualizado"] = vals[1]
@@ -246,8 +237,6 @@ def extrair_cartoes_ativos(paginas, tabelas_por_pag=None):
 
     return {"rmc": rmc, "rcc": rcc}
 
-
-# ── Consolidação ─────────────────────────────────────────────────────────────
 
 def processar_extrato(caminho) -> dict:
     paginas      = extrair_texto_pdf(caminho)
